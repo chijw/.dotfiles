@@ -1,4 +1,4 @@
-# dotfiles
+# .dotfiles
 
 Personal dotfiles. Managed with stow.
 
