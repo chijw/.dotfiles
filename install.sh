@@ -132,19 +132,33 @@ install_packages_via_brewfile() {
 # Rust & Cargo installation
 install_rust() {
   section "Rust & Cargo"
+
+  # Check if cargo exists (rustup installs both rustc and cargo by default)
   if command -v cargo &>/dev/null; then
-    success "Already installed — $(rustc --version)"
+    local rust_version=$(rustc --version 2>/dev/null || echo "unknown")
+    success "Already installed — $rust_version"
     return
   fi
 
-  step "Downloading rustup..."
+  step "Downloading rustup installer..."
   (
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path &>/tmp/rust-install.log
   ) &
-  spinner $! "Installing Rust toolchain"
+  spinner $! "Installing Rust toolchain (stable)"
 
-  [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
-  success "Installed successfully — $(rustc --version)"
+  # Source cargo env to make it available in current shell
+  if [[ -f "$HOME/.cargo/env" ]]; then
+    source "$HOME/.cargo/env"
+  else
+    error "Rust installation completed but cargo env not found"
+  fi
+
+  # Verify installation
+  if command -v cargo &>/dev/null; then
+    success "Installed successfully — $(rustc --version)"
+  else
+    error "Rust installation failed"
+  fi
 }
 
 # Node.js via fnm
@@ -315,7 +329,9 @@ main() {
   setup_shell
 
   echo -e "\n${GREEN}${BOLD}✓ Setup complete!${NC}"
-  echo -e "${DIM}Please restart your terminal to apply all changes.${NC}\n"
+  echo -e "${DIM}To apply all changes, run:${NC}"
+  echo -e "  ${CYAN}source ~/.zshrc${NC}"
+  echo -e "${DIM}Or restart your terminal.${NC}\n"
 }
 
 main "$@"
