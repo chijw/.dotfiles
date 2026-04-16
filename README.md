@@ -1,6 +1,6 @@
 # dotfiles
 
-Personal dotfiles.
+Personal dotfiles. Managed with stow.
 
 ## Setup
 
