@@ -1,11 +1,4 @@
-tap "homebrew/core"
-
-if OS.mac?
-  tap "homebrew/cask"
-end
-
 brew "stow"
-brew "git"
 brew "zsh"
 brew "tmux"
 
@@ -14,7 +7,7 @@ brew "lazygit"
 brew "yazi"
 brew "fastfetch"
 
-brew "node"
+brew "fnm"
 brew "codex"
 brew "ripgrep"
 brew "fd"
@@ -23,6 +16,4 @@ brew "zoxide"
 brew "mediainfo"
 brew "exiftool"
 
-if OS.mac?
-  cask "claude-code"
-end
+cask "claude-code"
