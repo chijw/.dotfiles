@@ -1,5 +1,3 @@
-# ~/dotfiles/Brewfile
-
 tap "homebrew/core"
 tap "homebrew/cask"
 
