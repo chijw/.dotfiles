@@ -1,0 +1,22 @@
+# Global stow ignore patterns
+# These patterns apply to all packages being stowed
+
+# Version control
+\.git
+\.gitignore
+\.gitmodules
+
+# macOS
+\.DS_Store
+
+# Neovim
+\.nvimlog
+
+# Editor/IDE
+\.vscode
+\.idea
+
+# Backup files
+~$
+\.swp$
+\.bak$

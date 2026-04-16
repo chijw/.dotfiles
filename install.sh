@@ -1,21 +1,48 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ── Colors & Logging ─────────────────────────────────────────────────────────
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
+# Colors & Logging
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m'
+
 info()    { echo -e "${BLUE}  →${NC} $*"; }
 success() { echo -e "${GREEN}  ✓${NC} $*"; }
 warn()    { echo -e "${YELLOW}  ⚠${NC} $*"; }
 error()   { echo -e "${RED}  ✗${NC} $*"; exit 1; }
 section() { echo -e "\n${BOLD}── $* ──${NC}"; }
 
+# Global paths
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BREWFILE="$DOTFILES_DIR/Brewfile"
+BREW_PATH=""
+ZSH_PATH=""
 
-# ── Homebrew ──────────────────────────────────────────────────────────────────
+# Initialize brew and zsh paths once
+init_paths() {
+  # Find brew in PATH or common locations
+  BREW_PATH=$(command -v brew 2>/dev/null || \
+    find /opt/homebrew/bin/brew /usr/local/bin/brew /home/linuxbrew/.linuxbrew/bin/brew \
+    -type f -executable 2>/dev/null | head -1)
+
+  # Load brew environment if found
+  [[ -n "$BREW_PATH" ]] && eval "$("$BREW_PATH" shellenv)"
+
+  # Find zsh (prefer brew version, fallback to system)
+  if [[ -n "$BREW_PATH" ]]; then
+    local brew_prefix="$("$BREW_PATH" --prefix 2>/dev/null || true)"
+    [[ -n "$brew_prefix" && -x "$brew_prefix/bin/zsh" ]] && ZSH_PATH="$brew_prefix/bin/zsh"
+  fi
+  ZSH_PATH="${ZSH_PATH:-$(command -v zsh 2>/dev/null || echo /bin/zsh)}"
+}
+
+# Homebrew installation
 install_homebrew() {
   section "Homebrew"
-  if command -v brew &>/dev/null; then
+  if [[ -n "$BREW_PATH" ]]; then
     success "Homebrew already installed — $(brew --version | head -1)"
     return
   fi
@@ -23,30 +50,23 @@ install_homebrew() {
   info "Installing Homebrew..."
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-  if [[ -d /opt/homebrew/bin ]]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-  elif [[ -d /usr/local/bin ]]; then
-    eval "$(/usr/local/bin/brew shellenv)"
-  fi
+  # Re-initialize paths after installation
+  init_paths
+  [[ -n "$BREW_PATH" ]] || error "Homebrew installed, but brew was not found"
   success "Homebrew installed"
 }
 
-# ── Brewfile Bundle ───────────────────────────────────────────────────────────
+# Install packages from Brewfile
 install_packages_via_brewfile() {
   section "Packages via Brewfile"
-  if [[ ! -f "$BREWFILE" ]]; then
-    error "Cannot find Brewfile at $BREWFILE"
-  fi
+  [[ -f "$BREWFILE" ]] || error "Cannot find Brewfile at $BREWFILE"
 
   info "Installing/Verifying packages..."
-  if brew bundle --file="$BREWFILE" --no-lock; then
-    success "Brewfile packages are ready."
-  else
-    error "Failed to install some packages."
-  fi
+  brew bundle install --file="$BREWFILE" --no-upgrade || error "Failed to install some packages"
+  success "Brewfile packages are ready"
 }
 
-# ── Rust / Cargo ──────────────────────────────────────────────────────────────
+# Rust & Cargo installation
 install_rust() {
   section "Rust & Cargo"
   if command -v cargo &>/dev/null; then
@@ -56,11 +76,11 @@ install_rust() {
 
   info "Installing Rust via rustup..."
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path
-  source "$HOME/.cargo/env"
+  [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
   success "Rust installed"
 }
 
-# ── Git Submodules ────────────────────────────────────────────────────────────
+# Initialize git submodules
 init_submodules() {
   section "Git Submodules"
   info "Initializing submodules..."
@@ -69,95 +89,89 @@ init_submodules() {
   success "Submodules ready"
 }
 
-# ── Stow Dotfiles ─────────────────────────────────────────────────────────────
+# Stow dotfiles to home directory
 stow_dotfiles() {
   section "Stowing Dotfiles"
   mkdir -p "$HOME/.config"
   cd "$DOTFILES_DIR"
-  
-  local folders=(git zim nvim lazygit yazi fastfetch)
+
+  local folders=(tmux zim nvim yazi)
 
   for pkg in "${folders[@]}"; do
-    if [[ -d "$DOTFILES_DIR/$pkg" ]]; then
-      info "Stowing $pkg..."
-      stow --restow --target="$HOME" "$pkg" 2>&1 | grep -v "^$" || true
-      success "Stowed $pkg"
-    else
-      warn "Folder '$pkg' not found in dotfiles, skipping"
+    if [[ ! -d "$DOTFILES_DIR/$pkg" ]]; then
+      warn "Folder '$pkg' not found, skipping"
+      continue
     fi
+
+    info "Stowing $pkg..."
+    stow --restow --target="$HOME" "$pkg" || error "Failed to stow '$pkg'"
+    success "Stowed $pkg"
   done
 }
 
-# ── Local .zshrc Setup ────────────────────────────────────
+# Configure ~/.zshrc with necessary paths
 setup_local_zshrc() {
   section "Configuring ~/.zshrc"
-  
+
   local zshrc="$HOME/.zshrc"
   touch "$zshrc"
 
-  ensure_line() {
-    local line="$1"
-    grep -qxF "$line" "$zshrc" || echo "$line" >> "$zshrc"
-  }
-
   info "Injecting environment paths..."
 
-  # Homebrew Path
-  if [[ -d /opt/homebrew/bin ]]; then
-    ensure_line 'eval "$(/opt/homebrew/bin/brew shellenv)"'
-  elif [[ -d /usr/local/bin ]]; then
-    ensure_line 'eval "$(/usr/local/bin/brew shellenv)"'
+  # Add Homebrew shellenv if not present
+  if [[ -n "$BREW_PATH" ]]; then
+    grep -qF "eval \"\$($BREW_PATH shellenv)\"" "$zshrc" || \
+      echo "eval \"\$($BREW_PATH shellenv)\"" >> "$zshrc"
   fi
 
-  # Cargo Path
-  ensure_line '[[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"'
+  # Add Cargo environment if not present
+  grep -qF '.cargo/env' "$zshrc" || \
+    echo '[[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"' >> "$zshrc"
 
   success "~/.zshrc updated with necessary paths"
 }
 
 # ── Zim (Zsh Framework) ───────────────────────────────────────────────────────
+# Install Zim framework and plugins
 install_zim() {
   section "Zim & Plugins"
   export ZIM_HOME="${ZDOTDIR:-$HOME}/.zim"
+  [[ -z "$ZSH_PATH" ]] && error "zsh is not installed; install it first and rerun the script"
 
   if [[ ! -d "$ZIM_HOME" ]]; then
     info "Installing Zimfw..."
-    curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | zsh
+    curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | "$ZSH_PATH"
     success "Zimfw installed"
   else
     success "Zimfw already installed"
   fi
 
   info "Syncing Zim modules based on .zimrc..."
-  zsh -c "source $ZIM_HOME/zimfw.zsh init -q && source $ZIM_HOME/zimfw.zsh install"
+  "$ZSH_PATH" -c 'source "$1/zimfw.zsh" init -q && source "$1/zimfw.zsh" install' _ "$ZIM_HOME"
   success "Zim modules synced"
 }
 
-# ── Setup Default Shell ───────────────────────────────────────────────────────
+# Setup default shell to zsh
 setup_shell() {
   section "Default Shell"
-  local zsh_path
-  zsh_path=$(command -v zsh)
-  
-  if [[ "$SHELL" == "$zsh_path" || "$SHELL" == "/bin/zsh" || "$SHELL" == "/usr/bin/zsh" ]]; then
+  [[ -z "$ZSH_PATH" ]] && error "zsh is not installed; install it first and rerun the script"
+
+  if [[ "$SHELL" == "$ZSH_PATH" || "$SHELL" == "/bin/zsh" || "$SHELL" == "/usr/bin/zsh" ]]; then
     success "Default shell is already zsh"
     return
   fi
 
-  info "Changing default shell to zsh ($zsh_path)..."
-  if ! grep -Fxq "$zsh_path" /etc/shells; then
-    warn "Adding $zsh_path to /etc/shells (requires sudo)..."
-    echo "$zsh_path" | sudo tee -a /etc/shells >/dev/null
+  info "Changing default shell to zsh ($ZSH_PATH)..."
+  if ! grep -Fxq "$ZSH_PATH" /etc/shells; then
+    warn "Adding $ZSH_PATH to /etc/shells (requires sudo)..."
+    echo "$ZSH_PATH" | sudo tee -a /etc/shells >/dev/null
   fi
 
-  if chsh -s "$zsh_path"; then
-    success "Default shell changed to zsh"
-  else
-    warn "Failed. Run manually: chsh -s $zsh_path"
-  fi
+  chsh -s "$ZSH_PATH" && success "Default shell changed to zsh" || \
+    warn "Failed to change shell. Run manually: chsh -s $ZSH_PATH"
 }
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# Main installation flow
 main() {
   echo -e "\n${BOLD}${BLUE}"
   echo "  ██████╗  ██████╗ ████████╗███████╗██╗██╗     ███████╗███████╗"
@@ -169,12 +183,13 @@ main() {
   echo -e "${NC}"
   echo -e "  ${BOLD}Setting up your environment...${NC}\n"
 
+  init_paths
   install_homebrew
   install_packages_via_brewfile
   install_rust
-  
+
   init_submodules
-  
+
   stow_dotfiles
   setup_local_zshrc
   install_zim
