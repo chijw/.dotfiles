@@ -185,10 +185,19 @@ install_rust() {
   fi
 
   step "Downloading rustup installer..."
-  (
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path &>/tmp/rust-install.log
-  ) &
-  spinner $! "Installing Rust toolchain (stable)"
+
+  # Try with SSL verification first, fallback to insecure if it fails
+  local curl_opts="--proto =https --tlsv1.2 -sSf"
+  local install_script
+
+  if install_script=$(curl $curl_opts https://sh.rustup.rs 2>/dev/null); then
+    echo "$install_script" | sh -s -- -y --no-modify-path &>/tmp/rust-install.log &
+    spinner $! "Installing Rust toolchain (stable)"
+  else
+    warn "SSL verification failed, retrying without verification..."
+    curl $curl_opts --insecure https://sh.rustup.rs 2>/dev/null | sh -s -- -y --no-modify-path &>/tmp/rust-install.log &
+    spinner $! "Installing Rust toolchain (stable)"
+  fi
 
   # Source cargo env to make it available in current shell
   if [[ -f "$HOME/.cargo/env" ]]; then
