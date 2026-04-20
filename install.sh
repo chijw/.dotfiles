@@ -86,6 +86,7 @@ DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BREWFILE="$DOTFILES_DIR/Brewfile"
 BREW_PATH=""
 ZSH_PATH=""
+CURL_BIN=""
 
 find_first_executable() {
   local candidate
@@ -100,6 +101,12 @@ find_first_executable() {
 
 # Initialize brew and zsh paths once
 init_paths() {
+  if [[ -x /usr/bin/curl ]]; then
+    CURL_BIN="/usr/bin/curl"
+  else
+    CURL_BIN="$(command -v curl 2>/dev/null || true)"
+  fi
+
   # Find brew in PATH or common locations
   BREW_PATH="$(command -v brew 2>/dev/null || true)"
   if [[ -z "$BREW_PATH" ]]; then
@@ -180,6 +187,12 @@ install_packages_via_brewfile() {
 install_rust() {
   section "Rust & Cargo"
 
+  if [[ -f "$HOME/.cargo/env" ]]; then
+    source "$HOME/.cargo/env"
+  elif [[ -d "$HOME/.cargo/bin" ]]; then
+    export PATH="$HOME/.cargo/bin:$PATH"
+  fi
+
   # Check if cargo exists (rustup installs both rustc and cargo by default)
   if command -v cargo &>/dev/null; then
     local rust_version=$(rustc --version 2>/dev/null || echo "unknown")
@@ -193,9 +206,11 @@ install_rust() {
   local pid
   local spinner_exit=0
 
+  [[ -n "$CURL_BIN" ]] || error "curl not found"
+
   (
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path >"$log_file" 2>&1
-  ) &
+    "$CURL_BIN" --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path
+  ) >"$log_file" 2>&1 &
   pid=$!
 
   spinner "$pid" "Installing Rust toolchain (stable)" 300
