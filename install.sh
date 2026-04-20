@@ -53,6 +53,25 @@ progress_bar() {
   printf "]${NC} %3d%% (%d/%d)" "$percentage" "$current" "$total"
 }
 
+print_log_matches() {
+  local log_file="$1"
+  local mode="${2:-summary}"
+  local line
+
+  while IFS= read -r line; do
+    case "$mode" in
+      summary)
+        if [[ "$line" =~ Installing|Using ]]; then
+          substep "$line"
+        fi
+        ;;
+      failure)
+        printf '  │  %s\n' "$line"
+        ;;
+    esac
+  done < "$log_file"
+}
+
 # Global paths
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BREWFILE="$DOTFILES_DIR/Brewfile"
@@ -121,27 +140,27 @@ install_packages_via_brewfile() {
 
   local max_retries=3
   local retry=0
+  local log_file="/tmp/dotfiles-brew-bundle.log"
 
   while [[ $retry -lt $max_retries ]]; do
-    if brew bundle install --file="$BREWFILE" --no-upgrade 2>&1 | while IFS= read -r line; do
-      if [[ "$line" =~ "Installing" ]]; then
-        substep "$line"
-      elif [[ "$line" =~ "Using" ]]; then
-        substep "$line"
-      fi
-    done; then
+    if brew bundle install --file="$BREWFILE" --no-upgrade >"$log_file" 2>&1; then
+      print_log_matches "$log_file" summary
       success "All packages ready"
       return 0
     fi
 
     retry=$((retry + 1))
     if [[ $retry -lt $max_retries ]]; then
+      warn "brew bundle failed. Last output:"
+      tail -n 20 "$log_file" | print_log_matches /dev/stdin failure
       warn "Some packages failed, retrying ($retry/$max_retries)..."
       sleep 5
     fi
   done
 
-  error "Failed to install some packages after $max_retries attempts"
+  warn "brew bundle failed. Last output:"
+  tail -n 40 "$log_file" | print_log_matches /dev/stdin failure
+  error "Failed to install some packages after $max_retries attempts. Full log: $log_file"
 }
 
 # Rust & Cargo installation
