@@ -14,4 +14,5 @@ brew "zoxide"
 brew "mediainfo"
 brew "exiftool"
 
+cask "codex"
 cask "claude-code"

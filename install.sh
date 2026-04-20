@@ -136,31 +136,45 @@ install_packages_via_brewfile() {
   section "Packages via Brewfile"
   [[ -f "$BREWFILE" ]] || error "Cannot find Brewfile at $BREWFILE"
 
-  step "Verifying packages..."
+  step "Counting packages..."
+  local total_packages=$(grep -E '^\s*(brew|cask)\s+"' "$BREWFILE" | wc -l | tr -d ' ')
+  local installed=0
+
+  step "Installing packages..."
 
   local max_retries=3
   local retry=0
-  local log_file="/tmp/dotfiles-brew-bundle.log"
 
   while [[ $retry -lt $max_retries ]]; do
-    if brew bundle install --file="$BREWFILE" --no-upgrade >"$log_file" 2>&1; then
-      print_log_matches "$log_file" summary
+    installed=0
+
+    # Run brew bundle and parse output in real-time
+    brew bundle install --file="$BREWFILE" --no-upgrade 2>&1 | while IFS= read -r line; do
+      if [[ "$line" =~ (Installing|Using|Upgrading)[[:space:]]+([^[:space:]]+) ]]; then
+        installed=$((installed + 1))
+        local action="${BASH_REMATCH[1]}"
+        local package="${BASH_REMATCH[2]}"
+        printf "\r${CYAN}  [%3d%%]${NC} ${DIM}%s${NC} %s" \
+          $((installed * 100 / total_packages)) "$action" "$package"
+      fi
+    done
+
+    local exit_code=${PIPESTATUS[0]}
+    echo ""  # New line after progress
+
+    if [[ $exit_code -eq 0 ]]; then
       success "All packages ready"
       return 0
     fi
 
     retry=$((retry + 1))
     if [[ $retry -lt $max_retries ]]; then
-      warn "brew bundle failed. Last output:"
-      tail -n 20 "$log_file" | print_log_matches /dev/stdin failure
       warn "Some packages failed, retrying ($retry/$max_retries)..."
       sleep 5
     fi
   done
 
-  warn "brew bundle failed. Last output:"
-  tail -n 40 "$log_file" | print_log_matches /dev/stdin failure
-  error "Failed to install some packages after $max_retries attempts. Full log: $log_file"
+  error "Failed to install some packages after $max_retries attempts"
 }
 
 # Rust & Cargo installation
