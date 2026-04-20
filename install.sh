@@ -189,20 +189,17 @@ install_rust() {
 
   step "Downloading rustup installer..."
 
-  # Try with SSL verification first, fallback to insecure if it fails
   local rustup_script
   local log_file="/tmp/rust-install.log"
   local curl_args=(--proto '=https' --tlsv1.2 -fsSL)
   local pid
+  local spinner_exit=0
 
   rustup_script="$(mktemp /tmp/rustup-init.XXXXXX.sh)"
 
-  if ! curl "${curl_args[@]}" https://sh.rustup.rs -o "$rustup_script" 2>/dev/null; then
-    warn "SSL verification failed, retrying without verification..."
-    if ! curl "${curl_args[@]}" --insecure https://sh.rustup.rs -o "$rustup_script" 2>/dev/null; then
-      rm -f "$rustup_script"
-      error "Failed to download rustup installer"
-    fi
+  if ! curl "${curl_args[@]}" https://sh.rustup.rs -o "$rustup_script" >"$log_file" 2>&1; then
+    rm -f "$rustup_script"
+    error "Rust install aborted: TLS/CA verification failed. See $log_file"
   fi
 
   (
@@ -210,11 +207,17 @@ install_rust() {
   ) &
   pid=$!
 
-  if ! spinner "$pid" "Installing Rust toolchain (stable)" 300; then
-    warn "Installation failed or timed out. Log: $log_file"
-    tail -n 20 "$log_file"
+  spinner "$pid" "Installing Rust toolchain (stable)" 300
+  spinner_exit=$?
+  if [[ $spinner_exit -ne 0 ]]; then
     rm -f "$rustup_script"
-    error "Rust installation failed"
+    if grep -Eq 'curl: \(60\)|SSL certificate|unable to get local issuer certificate|certificate verify failed' "$log_file"; then
+      error "Rust install aborted: rustup hit a TLS/CA verification failure. See $log_file"
+    fi
+    if [[ $spinner_exit -eq 124 ]]; then
+      error "Rust installation timed out. See $log_file"
+    fi
+    error "Rust installation failed. See $log_file"
   fi
 
   rm -f "$rustup_script"
