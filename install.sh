@@ -187,40 +187,25 @@ install_rust() {
     return
   fi
 
-  step "Downloading rustup installer..."
+  step "Installing via rustup..."
 
-  local rustup_script
   local log_file="/tmp/rust-install.log"
-  local curl_args=(--proto '=https' --tlsv1.2 -fsSL)
   local pid
   local spinner_exit=0
 
-  rustup_script="$(mktemp /tmp/rustup-init.XXXXXX.sh)"
-
-  if ! curl "${curl_args[@]}" https://sh.rustup.rs -o "$rustup_script" >"$log_file" 2>&1; then
-    rm -f "$rustup_script"
-    error "Rust install aborted: TLS/CA verification failed. See $log_file"
-  fi
-
   (
-    sh "$rustup_script" -y --no-modify-path >"$log_file" 2>&1
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path >"$log_file" 2>&1
   ) &
   pid=$!
 
   spinner "$pid" "Installing Rust toolchain (stable)" 300
   spinner_exit=$?
   if [[ $spinner_exit -ne 0 ]]; then
-    rm -f "$rustup_script"
-    if grep -Eq 'curl: \(60\)|SSL certificate|unable to get local issuer certificate|certificate verify failed' "$log_file"; then
-      error "Rust install aborted: rustup hit a TLS/CA verification failure. See $log_file"
-    fi
     if [[ $spinner_exit -eq 124 ]]; then
       error "Rust installation timed out. See $log_file"
     fi
     error "Rust installation failed. See $log_file"
   fi
-
-  rm -f "$rustup_script"
 
   # Source cargo env to make it available in current shell
   if [[ -f "$HOME/.cargo/env" ]]; then
