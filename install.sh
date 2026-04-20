@@ -19,17 +19,26 @@ section() { echo -e "\n${CYAN}${BOLD}▸ $*${NC}"; }
 step()    { echo -e "${DIM}  ├─${NC} $*"; }
 substep() { echo -e "${DIM}  │  └─${NC} $*"; }
 
-# Progress spinner
+# Progress spinner with timeout
 spinner() {
   local pid=$1
   local message=$2
+  local timeout=${3:-300}  # Default 5 minutes
   local spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
   local i=0
+  local elapsed=0
 
   while kill -0 "$pid" 2>/dev/null; do
     i=$(( (i+1) % 10 ))
     printf "\r${BLUE}  ${spin:$i:1}${NC} %s" "$message"
     sleep 0.1
+    elapsed=$((elapsed + 1))
+
+    if [[ $timeout -gt 0 && $elapsed -ge $((timeout * 10)) ]]; then
+      kill "$pid" 2>/dev/null
+      printf "\r"
+      return 124  # Timeout exit code
+    fi
   done
 
   wait "$pid"
@@ -189,14 +198,30 @@ install_rust() {
   # Try with SSL verification first, fallback to insecure if it fails
   local curl_opts="--proto =https --tlsv1.2 -sSf"
   local install_script
+  local log_file="/tmp/rust-install.log"
 
   if install_script=$(curl $curl_opts https://sh.rustup.rs 2>/dev/null); then
-    echo "$install_script" | sh -s -- -y --no-modify-path &>/tmp/rust-install.log &
-    spinner $! "Installing Rust toolchain (stable)"
+    echo "$install_script" | sh -s -- -y --no-modify-path &>"$log_file" &
+    local pid=$!
+    if spinner $pid "Installing Rust toolchain (stable)" 300; then
+      :  # Success
+    else
+      warn "Installation failed or timed out. Log: $log_file"
+      tail -20 "$log_file"
+      error "Rust installation failed"
+    fi
   else
     warn "SSL verification failed, retrying without verification..."
-    curl $curl_opts --insecure https://sh.rustup.rs 2>/dev/null | sh -s -- -y --no-modify-path &>/tmp/rust-install.log &
-    spinner $! "Installing Rust toolchain (stable)"
+    if curl $curl_opts --insecure https://sh.rustup.rs 2>/dev/null | sh -s -- -y --no-modify-path &>"$log_file" &; then
+      local pid=$!
+      if ! spinner $pid "Installing Rust toolchain (stable)" 300; then
+        warn "Installation failed or timed out. Log: $log_file"
+        tail -20 "$log_file"
+        error "Rust installation failed"
+      fi
+    else
+      error "Failed to download rustup installer"
+    fi
   fi
 
   # Source cargo env to make it available in current shell
