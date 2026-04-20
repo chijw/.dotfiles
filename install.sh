@@ -58,13 +58,176 @@ DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BREWFILE="$DOTFILES_DIR/Brewfile"
 BREW_PATH=""
 ZSH_PATH=""
+NODE_MIN_VERSION="20.0.0"
+
+find_first_executable() {
+  local candidate
+  for candidate in "$@"; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+extract_version_token() {
+  local raw="$1"
+
+  if [[ "$raw" =~ ([0-9]+([.][0-9]+)+) ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  if [[ "$raw" =~ ([0-9]+) ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  return 1
+}
+
+version_ge() {
+  local left_raw="$1"
+  local right_raw="$2"
+  local left right
+  local IFS=.
+  local left_parts=()
+  local right_parts=()
+  local max_len=0
+  local i left_num right_num
+
+  left="$(extract_version_token "$left_raw")" || return 1
+  right="$(extract_version_token "$right_raw")" || return 1
+
+  read -r -a left_parts <<<"$left"
+  read -r -a right_parts <<<"$right"
+
+  max_len="${#left_parts[@]}"
+  if (( ${#right_parts[@]} > max_len )); then
+    max_len="${#right_parts[@]}"
+  fi
+
+  for (( i = 0; i < max_len; i++ )); do
+    left_num="${left_parts[i]:-0}"
+    right_num="${right_parts[i]:-0}"
+
+    if (( 10#$left_num > 10#$right_num )); then
+      return 0
+    fi
+    if (( 10#$left_num < 10#$right_num )); then
+      return 1
+    fi
+  done
+
+  return 0
+}
+
+brew_formula_policy() {
+  case "$1" in
+    stow) printf 'stow\t2.3.1\n' ;;
+    zsh) printf 'zsh\t5.8\n' ;;
+    tmux) printf 'tmux\t3.2\n' ;;
+    neovim) printf 'nvim\t0.10.0\n' ;;
+    lazygit) printf 'lazygit\t0.41.0\n' ;;
+    yazi) printf 'yazi\t25.2.11\n' ;;
+    fastfetch) printf 'fastfetch\t2.0.0\n' ;;
+    fnm) printf 'fnm\t1.35.0\n' ;;
+    codex) printf 'codex\t\n' ;;
+    ripgrep) printf 'rg\t13.0.0\n' ;;
+    fd) printf 'fd\t8.7.0\n' ;;
+    fzf) printf 'fzf\t0.48.0\n' ;;
+    zoxide) printf 'zoxide\t0.9.0\n' ;;
+    mediainfo) printf 'mediainfo\t23.0\n' ;;
+    exiftool) printf 'exiftool\t12.0\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+probe_formula_version() {
+  case "$1" in
+    stow) stow --version | head -1 ;;
+    zsh) zsh --version | head -1 ;;
+    tmux) tmux -V | head -1 ;;
+    neovim) nvim --version | head -1 ;;
+    lazygit) lazygit --version | head -1 ;;
+    yazi) yazi --version | head -1 ;;
+    fastfetch) fastfetch --version | head -1 ;;
+    fnm) fnm --version | head -1 ;;
+    codex) codex --version | head -1 ;;
+    ripgrep) rg --version | head -1 ;;
+    fd) fd --version | head -1 ;;
+    fzf) fzf --version | head -1 ;;
+    zoxide) zoxide --version | head -1 ;;
+    mediainfo) mediainfo --Version | head -1 ;;
+    exiftool) exiftool -ver | head -1 ;;
+    *) return 1 ;;
+  esac
+}
+
+prepare_brew_bundle_skip_env() {
+  local skip_formulae=()
+  local formula policy command_name min_version resolved_path current_raw current_version
+
+  while IFS= read -r formula; do
+    [[ -n "$formula" ]] || continue
+
+    if ! policy="$(brew_formula_policy "$formula")"; then
+      continue
+    fi
+
+    command_name="${policy%%$'\t'*}"
+    min_version="${policy#*$'\t'}"
+
+    resolved_path="$(command -v "$command_name" 2>/dev/null || true)"
+    if [[ -z "$resolved_path" ]]; then
+      continue
+    fi
+
+    if [[ -n "$min_version" ]]; then
+      current_raw="$(probe_formula_version "$formula" 2>/dev/null || true)"
+      if [[ -z "$current_raw" ]]; then
+        info "Installing $formula via Homebrew: found $command_name at $resolved_path but could not detect version"
+        continue
+      fi
+
+      current_version="$(extract_version_token "$current_raw" 2>/dev/null || true)"
+      if [[ -z "$current_version" ]]; then
+        info "Installing $formula via Homebrew: found $command_name at $resolved_path but could not parse version from '$current_raw'"
+        continue
+      fi
+
+      if ! version_ge "$current_version" "$min_version"; then
+        info "Installing $formula via Homebrew: found $command_name $current_version at $resolved_path, need >= $min_version"
+        continue
+      fi
+
+      info "Skipping Homebrew $formula: using $command_name $current_version at $resolved_path"
+    else
+      info "Skipping Homebrew $formula: using $command_name at $resolved_path"
+    fi
+
+    skip_formulae+=("$formula")
+  done < <(sed -n 's/^[[:space:]]*brew "\([^"]*\)".*/\1/p' "$BREWFILE")
+
+  if (( ${#skip_formulae[@]} > 0 )); then
+    HOMEBREW_BUNDLE_BREW_SKIP="${skip_formulae[*]}"
+    export HOMEBREW_BUNDLE_BREW_SKIP
+  else
+    unset HOMEBREW_BUNDLE_BREW_SKIP || true
+  fi
+}
 
 # Initialize brew and zsh paths once
 init_paths() {
   # Find brew in PATH or common locations
-  BREW_PATH=$(command -v brew 2>/dev/null || \
-    find /opt/homebrew/bin/brew /usr/local/bin/brew /home/linuxbrew/.linuxbrew/bin/brew \
-    -type f -executable 2>/dev/null | head -1)
+  BREW_PATH="$(command -v brew 2>/dev/null || true)"
+  if [[ -z "$BREW_PATH" ]]; then
+    BREW_PATH="$(find_first_executable \
+      /opt/homebrew/bin/brew \
+      /usr/local/bin/brew \
+      /home/linuxbrew/.linuxbrew/bin/brew 2>/dev/null || true)"
+  fi
 
   # Load brew environment if found
   [[ -n "$BREW_PATH" ]] && eval "$("$BREW_PATH" shellenv)"
@@ -103,6 +266,7 @@ install_packages_via_brewfile() {
   [[ -f "$BREWFILE" ]] || error "Cannot find Brewfile at $BREWFILE"
 
   step "Verifying packages..."
+  prepare_brew_bundle_skip_env
 
   local max_retries=3
   local retry=0
@@ -164,17 +328,22 @@ install_rust() {
 # Node.js via fnm
 install_node() {
   section "Node.js via fnm"
+  if command -v node &>/dev/null; then
+    local current_node
+    current_node="$(node --version 2>/dev/null || true)"
+    if [[ -n "$current_node" ]] && version_ge "$current_node" "$NODE_MIN_VERSION"; then
+      success "Already installed — $current_node"
+      return
+    fi
+    warn "Found node ${current_node:-unknown}, but need >= $NODE_MIN_VERSION. Installing via fnm."
+  fi
+
   if ! command -v fnm &>/dev/null; then
     error "fnm is not installed (should be installed via Brewfile)"
   fi
 
   # Initialize fnm in current shell
   eval "$(fnm env --use-on-cd)"
-
-  if command -v node &>/dev/null; then
-    success "Already installed — $(node --version)"
-    return
-  fi
 
   step "Installing LTS version..."
   (
@@ -218,7 +387,13 @@ stow_dotfiles() {
     fi
 
     step "Stowing $pkg..."
-    stow --restow --target="$HOME" "$pkg" &>/tmp/stow-$pkg.log || error "Failed to stow '$pkg'"
+    stow \
+      --restow \
+      --target="$HOME" \
+      --ignore='(^|/)\.git$' \
+      --ignore='(^|/)\.DS_Store$' \
+      --ignore='(^|/)\.nvimlog$' \
+      "$pkg" &>/tmp/stow-$pkg.log || error "Failed to stow '$pkg'"
     progress_bar "$current" "$total"
   done
 
