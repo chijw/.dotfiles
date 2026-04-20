@@ -11,39 +11,88 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
-info()    { echo -e "${BLUE}  →${NC} $*"; }
-success() { echo -e "${GREEN}  ✓${NC} $*"; }
-warn()    { echo -e "${YELLOW}  ⚠${NC} $*"; }
-error()   { echo -e "${RED}  ✗${NC} $*"; exit 1; }
-section() { echo -e "\n${CYAN}${BOLD}▸ $*${NC}"; }
-step()    { echo -e "${DIM}  ├─${NC} $*"; }
-substep() { echo -e "${DIM}  │  └─${NC} $*"; }
+USE_UNICODE=0
+SPINNER_FRAMES='-\|/'
+BAR_FILLED_CHAR='#'
+BAR_EMPTY_CHAR='-'
+ICON_INFO='->'
+ICON_SUCCESS='OK'
+ICON_WARN='!!'
+ICON_ERROR='XX'
+ICON_SECTION='>'
+ICON_STEP='|-'
+ICON_SUBSTEP='|  `-'
+LOG_PREFIX='|'
+
+init_ui() {
+  if [[ "${LC_ALL:-${LANG:-}}" == *UTF-8* || "${LC_ALL:-${LANG:-}}" == *utf8* ]]; then
+    USE_UNICODE=1
+    SPINNER_FRAMES='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    BAR_FILLED_CHAR='█'
+    BAR_EMPTY_CHAR='░'
+    ICON_INFO='→'
+    ICON_SUCCESS='✓'
+    ICON_WARN='⚠'
+    ICON_ERROR='✗'
+    ICON_SECTION='▸'
+    ICON_STEP='├─'
+    ICON_SUBSTEP='│  └─'
+    LOG_PREFIX='│'
+  fi
+}
+
+repeat_char() {
+  local char="$1"
+  local count="$2"
+  local out=""
+  local i
+
+  for ((i = 0; i < count; i++)); do
+    out+="$char"
+  done
+
+  printf '%s' "$out"
+}
+
+clear_line() {
+  printf '\r\033[2K'
+}
+
+info()    { echo -e "${BLUE}  ${ICON_INFO}${NC} $*"; }
+success() { echo -e "${GREEN}  ${ICON_SUCCESS}${NC} $*"; }
+warn()    { echo -e "${YELLOW}  ${ICON_WARN}${NC} $*"; }
+error()   { echo -e "${RED}  ${ICON_ERROR}${NC} $*"; exit 1; }
+section() { echo -e "\n${CYAN}${BOLD}${ICON_SECTION} $*${NC}"; }
+step()    { echo -e "${DIM}  ${ICON_STEP}${NC} $*"; }
+substep() { echo -e "${DIM}  ${ICON_SUBSTEP}${NC} $*"; }
 
 # Progress spinner with timeout
 spinner() {
   local pid=$1
   local message=$2
   local timeout=${3:-300}  # Default 5 minutes
-  local spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+  local spin="$SPINNER_FRAMES"
   local i=0
   local elapsed=0
+  local frame_count=${#spin}
 
   while kill -0 "$pid" 2>/dev/null; do
-    i=$(( (i+1) % 10 ))
-    printf "\r${BLUE}  ${spin:$i:1}${NC} %s" "$message"
+    clear_line
+    printf "${BLUE}  %s${NC} %s" "${spin:$i:1}" "$message"
+    i=$(( (i + 1) % frame_count ))
     sleep 0.1
     elapsed=$((elapsed + 1))
 
     if [[ $timeout -gt 0 && $elapsed -ge $((timeout * 10)) ]]; then
       kill "$pid" 2>/dev/null
-      printf "\r"
+      clear_line
       return 124  # Timeout exit code
     fi
   done
 
   wait "$pid"
   local exit_code=$?
-  printf "\r"
+  clear_line
   return $exit_code
 }
 
@@ -51,15 +100,18 @@ spinner() {
 progress_bar() {
   local current=$1
   local total=$2
+  local message="${3:-}"
   local width=30
   local percentage=$((current * 100 / total))
   local filled=$((width * current / total))
   local empty=$((width - filled))
 
-  printf "\r${CYAN}  ["
-  printf "%${filled}s" | tr ' ' '█'
-  printf "%${empty}s" | tr ' ' '░'
+  clear_line
+  printf "${CYAN}  ["
+  repeat_char "$BAR_FILLED_CHAR" "$filled"
+  repeat_char "$BAR_EMPTY_CHAR" "$empty"
   printf "]${NC} %3d%% (%d/%d)" "$percentage" "$current" "$total"
+  [[ -n "$message" ]] && printf "  %s" "$message"
 }
 
 print_log_matches() {
@@ -75,7 +127,7 @@ print_log_matches() {
         fi
         ;;
       failure)
-        printf '  │  %s\n' "$line"
+        printf '  %s  %s\n' "$LOG_PREFIX" "$line"
         ;;
     esac
   done < "$log_file"
@@ -86,7 +138,6 @@ DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BREWFILE="$DOTFILES_DIR/Brewfile"
 BREW_PATH=""
 ZSH_PATH=""
-CURL_BIN=""
 
 find_first_executable() {
   local candidate
@@ -101,12 +152,6 @@ find_first_executable() {
 
 # Initialize brew and zsh paths once
 init_paths() {
-  if [[ -x /usr/bin/curl ]]; then
-    CURL_BIN="/usr/bin/curl"
-  else
-    CURL_BIN="$(command -v curl 2>/dev/null || true)"
-  fi
-
   # Find brew in PATH or common locations
   BREW_PATH="$(command -v brew 2>/dev/null || true)"
   if [[ -z "$BREW_PATH" ]]; then
@@ -115,9 +160,6 @@ init_paths() {
       /usr/local/bin/brew \
       /home/linuxbrew/.linuxbrew/bin/brew 2>/dev/null || true)"
   fi
-
-  # Load brew environment if found
-  [[ -n "$BREW_PATH" ]] && eval "$("$BREW_PATH" shellenv)"
 
   # Find zsh (prefer brew version, fallback to system)
   if [[ -n "$BREW_PATH" ]]; then
@@ -131,11 +173,12 @@ init_paths() {
 install_homebrew() {
   section "Homebrew"
   if [[ -n "$BREW_PATH" ]]; then
-    success "Already installed — $(brew --version | head -1)"
+    success "Already installed — $("$BREW_PATH" --version | head -1)"
     return
   fi
 
   step "Downloading installer..."
+  command -v curl &>/dev/null || error "curl not found"
   (
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" &>/tmp/brew-install.log
   ) &
@@ -144,7 +187,7 @@ install_homebrew() {
   # Re-initialize paths after installation
   init_paths
   [[ -n "$BREW_PATH" ]] || error "Homebrew installed, but brew was not found"
-  success "Installed successfully — $(brew --version | head -1)"
+  success "Installed successfully — $("$BREW_PATH" --version | head -1)"
 }
 
 # Install packages from Brewfile
@@ -159,7 +202,7 @@ install_packages_via_brewfile() {
   local log_file="/tmp/brew-bundle-$$.log"
 
   while [[ $retry -lt $max_retries ]]; do
-    if brew bundle install --file="$BREWFILE" --no-upgrade \
+    if "$BREW_PATH" bundle install --file="$BREWFILE" --no-upgrade \
       > >(tee "$log_file" | grep --line-buffered -E '(Installing|Using|Upgrading|Skipping|Fetching)' | while IFS= read -r line; do
         substep "$line"
       done) \
@@ -206,10 +249,10 @@ install_rust() {
   local pid
   local spinner_exit=0
 
-  [[ -n "$CURL_BIN" ]] || error "curl not found"
+  command -v curl &>/dev/null || error "curl not found"
 
   (
-    "$CURL_BIN" --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path
   ) >"$log_file" 2>&1 &
   pid=$!
 
@@ -242,6 +285,7 @@ install_rust() {
 # Node.js via fnm
 install_node() {
   section "Node.js via fnm"
+  eval "$("$BREW_PATH" shellenv)"
 
   if ! command -v fnm &>/dev/null; then
     error "fnm is not installed (should be installed via Brewfile)"
@@ -276,6 +320,7 @@ init_submodules() {
 # Stow dotfiles to home directory
 stow_dotfiles() {
   section "Stowing Dotfiles"
+  eval "$("$BREW_PATH" shellenv)"
   mkdir -p "$HOME/.config"
   cd "$DOTFILES_DIR"
 
@@ -283,23 +328,30 @@ stow_dotfiles() {
   local total=${#folders[@]}
   local current=0
 
+  step "Linking packages..."
+
   for pkg in "${folders[@]}"; do
     current=$((current + 1))
 
     if [[ ! -d "$DOTFILES_DIR/$pkg" ]]; then
+      progress_bar "$current" "$total" "Skipping $pkg"
+      echo ""
       warn "Folder '$pkg' not found, skipping"
       continue
     fi
 
-    step "Stowing $pkg..."
+    progress_bar "$((current - 1))" "$total" "Stowing $pkg..."
     stow \
       --restow \
       --target="$HOME" \
       --ignore='(^|/)\.git$' \
       --ignore='(^|/)\.DS_Store$' \
       --ignore='(^|/)\.nvimlog$' \
-      "$pkg" &>/tmp/stow-$pkg.log || error "Failed to stow '$pkg'"
-    progress_bar "$current" "$total"
+      "$pkg" &>/tmp/stow-$pkg.log || {
+        echo ""
+        error "Failed to stow '$pkg'"
+      }
+    progress_bar "$current" "$total" "Stowed $pkg"
   done
 
   echo ""
@@ -353,6 +405,7 @@ install_zim() {
 
   if [[ ! -d "$ZIM_HOME" ]]; then
     step "Installing Zimfw..."
+    command -v curl &>/dev/null || error "curl not found"
     (
       curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | "$ZSH_PATH" &>/tmp/zim-install.log
     ) &
@@ -392,6 +445,7 @@ setup_shell() {
 
 # Main installation flow
 main() {
+  init_ui
   echo -e "\n${BOLD}${CYAN}Dotfiles Setup${NC}"
   echo -e "${DIM}Setting up your development environment...${NC}\n"
 
