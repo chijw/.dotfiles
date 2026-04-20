@@ -145,9 +145,6 @@ install_packages_via_brewfile() {
   section "Packages via Brewfile"
   [[ -f "$BREWFILE" ]] || error "Cannot find Brewfile at $BREWFILE"
 
-  step "Counting packages..."
-  local total_packages=$(grep -E '^\s*(brew|cask)\s+"' "$BREWFILE" | wc -l | tr -d ' ')
-
   step "Installing packages..."
 
   local max_retries=3
@@ -155,31 +152,28 @@ install_packages_via_brewfile() {
   local log_file="/tmp/brew-bundle-$$.log"
 
   while [[ $retry -lt $max_retries ]]; do
-    # Run brew bundle with output to both terminal and log
-    if brew bundle install --file="$BREWFILE" --no-upgrade 2>&1 | tee "$log_file" | \
-       grep --line-buffered -E '(Installing|Using|Upgrading|Skipping|Fetching)' | \
-       while IFS= read -r line; do
-         substep "$line"
-       done; then
-
-      local exit_code=${PIPESTATUS[0]}
-
-      if [[ $exit_code -eq 0 ]]; then
-        success "All packages ready"
-        rm -f "$log_file"
-        return 0
-      fi
+    if brew bundle install --file="$BREWFILE" --no-upgrade \
+      > >(tee "$log_file" | grep --line-buffered -E '(Installing|Using|Upgrading|Skipping|Fetching)' | while IFS= read -r line; do
+        substep "$line"
+      done) \
+      2>&1; then
+      success "All packages ready"
+      rm -f "$log_file"
+      return 0
     fi
 
     retry=$((retry + 1))
     if [[ $retry -lt $max_retries ]]; then
+      warn "brew bundle failed. Last output:"
+      tail -n 20 "$log_file" | print_log_matches /dev/stdin failure
       warn "Some packages failed, retrying ($retry/$max_retries)..."
       sleep 5
     fi
   done
 
-  warn "Installation failed. Log saved to: $log_file"
-  error "Failed to install some packages after $max_retries attempts"
+  warn "brew bundle failed. Last output:"
+  tail -n 40 "$log_file" | print_log_matches /dev/stdin failure
+  error "Failed to install some packages after $max_retries attempts. Full log: $log_file"
 }
 
 # Rust & Cargo installation
@@ -196,39 +190,42 @@ install_rust() {
   step "Downloading rustup installer..."
 
   # Try with SSL verification first, fallback to insecure if it fails
-  local curl_opts="--proto =https --tlsv1.2 -sSf"
-  local install_script
+  local rustup_script
   local log_file="/tmp/rust-install.log"
+  local curl_args=(--proto '=https' --tlsv1.2 -fsSL)
+  local pid
 
-  if install_script=$(curl $curl_opts https://sh.rustup.rs 2>/dev/null); then
-    echo "$install_script" | sh -s -- -y --no-modify-path &>"$log_file" &
-    local pid=$!
-    if spinner $pid "Installing Rust toolchain (stable)" 300; then
-      :  # Success
-    else
-      warn "Installation failed or timed out. Log: $log_file"
-      tail -20 "$log_file"
-      error "Rust installation failed"
-    fi
-  else
+  rustup_script="$(mktemp /tmp/rustup-init.XXXXXX.sh)"
+
+  if ! curl "${curl_args[@]}" https://sh.rustup.rs -o "$rustup_script" 2>/dev/null; then
     warn "SSL verification failed, retrying without verification..."
-    if curl $curl_opts --insecure https://sh.rustup.rs 2>/dev/null | sh -s -- -y --no-modify-path &>"$log_file" &; then
-      local pid=$!
-      if ! spinner $pid "Installing Rust toolchain (stable)" 300; then
-        warn "Installation failed or timed out. Log: $log_file"
-        tail -20 "$log_file"
-        error "Rust installation failed"
-      fi
-    else
+    if ! curl "${curl_args[@]}" --insecure https://sh.rustup.rs -o "$rustup_script" 2>/dev/null; then
+      rm -f "$rustup_script"
       error "Failed to download rustup installer"
     fi
   fi
 
+  (
+    sh "$rustup_script" -y --no-modify-path >"$log_file" 2>&1
+  ) &
+  pid=$!
+
+  if ! spinner "$pid" "Installing Rust toolchain (stable)" 300; then
+    warn "Installation failed or timed out. Log: $log_file"
+    tail -n 20 "$log_file"
+    rm -f "$rustup_script"
+    error "Rust installation failed"
+  fi
+
+  rm -f "$rustup_script"
+
   # Source cargo env to make it available in current shell
   if [[ -f "$HOME/.cargo/env" ]]; then
     source "$HOME/.cargo/env"
+  elif [[ -d "$HOME/.cargo/bin" ]]; then
+    export PATH="$HOME/.cargo/bin:$PATH"
   else
-    error "Rust installation completed but cargo env not found"
+    error "Rust installation completed but neither ~/.cargo/env nor ~/.cargo/bin was found"
   fi
 
   # Verify installation
