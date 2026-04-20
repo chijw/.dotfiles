@@ -1,6 +1,4 @@
 brew "stow"
-brew "zsh"
-brew "tmux"
 
 brew "neovim"
 brew "lazygit"
