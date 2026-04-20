@@ -138,33 +138,28 @@ install_packages_via_brewfile() {
 
   step "Counting packages..."
   local total_packages=$(grep -E '^\s*(brew|cask)\s+"' "$BREWFILE" | wc -l | tr -d ' ')
-  local installed=0
 
   step "Installing packages..."
 
   local max_retries=3
   local retry=0
+  local log_file="/tmp/brew-bundle-$$.log"
 
   while [[ $retry -lt $max_retries ]]; do
-    installed=0
+    # Run brew bundle with output to both terminal and log
+    if brew bundle install --file="$BREWFILE" --no-upgrade 2>&1 | tee "$log_file" | \
+       grep --line-buffered -E '(Installing|Using|Upgrading|Skipping|Fetching)' | \
+       while IFS= read -r line; do
+         substep "$line"
+       done; then
 
-    # Run brew bundle and parse output in real-time
-    brew bundle install --file="$BREWFILE" --no-upgrade 2>&1 | while IFS= read -r line; do
-      if [[ "$line" =~ (Installing|Using|Upgrading)[[:space:]]+([^[:space:]]+) ]]; then
-        installed=$((installed + 1))
-        local action="${BASH_REMATCH[1]}"
-        local package="${BASH_REMATCH[2]}"
-        printf "\r${CYAN}  [%3d%%]${NC} ${DIM}%s${NC} %s" \
-          $((installed * 100 / total_packages)) "$action" "$package"
+      local exit_code=${PIPESTATUS[0]}
+
+      if [[ $exit_code -eq 0 ]]; then
+        success "All packages ready"
+        rm -f "$log_file"
+        return 0
       fi
-    done
-
-    local exit_code=${PIPESTATUS[0]}
-    echo ""  # New line after progress
-
-    if [[ $exit_code -eq 0 ]]; then
-      success "All packages ready"
-      return 0
     fi
 
     retry=$((retry + 1))
@@ -174,6 +169,7 @@ install_packages_via_brewfile() {
     fi
   done
 
+  warn "Installation failed. Log saved to: $log_file"
   error "Failed to install some packages after $max_retries attempts"
 }
 
