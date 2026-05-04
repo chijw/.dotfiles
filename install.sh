@@ -524,14 +524,14 @@ main() {
   init_submodules
 
   stow_dotfiles
-  setup_local_zshrc
   install_zim
+  setup_local_zshrc
   setup_shell
 
   echo -e "\n${GREEN}${BOLD}✓ Setup complete!${NC}"
-  echo -e "${DIM}To apply all changes, run:${NC}"
-  echo -e "  ${CYAN}source ~/.zshrc${NC}"
-  echo -e "${DIM}Or restart your terminal.${NC}\n"
+  echo -e "${DIM}Start a fresh zsh session:${NC}"
+  echo -e "  ${CYAN}exec zsh -l${NC}"
+  echo -e "${DIM}Or reopen your terminal.${NC}\n"
 }
 
 main "$@"
