@@ -90,8 +90,8 @@ spinner() {
     fi
   done
 
-  wait "$pid"
-  local exit_code=$?
+  local exit_code=0
+  wait "$pid" || exit_code=$?
   clear_line
   return $exit_code
 }
@@ -131,6 +131,14 @@ print_log_matches() {
         ;;
     esac
   done < "$log_file"
+}
+
+show_log_tail() {
+  local log_file="$1"
+  local lines="${2:-12}"
+
+  [[ -s "$log_file" ]] || return 0
+  tail -n "$lines" "$log_file" | print_log_matches /dev/stdin failure
 }
 
 # Global paths
@@ -179,10 +187,22 @@ install_homebrew() {
 
   step "Downloading installer..."
   command -v curl &>/dev/null || error "curl not found"
+  local log_file="/tmp/brew-install.log"
+  local pid
+  local spinner_exit=0
+
   (
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" &>/tmp/brew-install.log
-  ) &
-  spinner $! "Installing Homebrew"
+    export NONINTERACTIVE=1
+    curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | /bin/bash
+  ) >"$log_file" 2>&1 &
+  pid=$!
+
+  spinner "$pid" "Installing Homebrew" || spinner_exit=$?
+  if [[ $spinner_exit -ne 0 ]]; then
+    warn "Homebrew install failed. Last output:"
+    show_log_tail "$log_file"
+    error "Homebrew installation failed. See $log_file"
+  fi
 
   # Re-initialize paths after installation
   init_paths
@@ -256,8 +276,7 @@ install_rust() {
   ) >"$log_file" 2>&1 &
   pid=$!
 
-  spinner "$pid" "Installing Rust toolchain (stable)" 300
-  spinner_exit=$?
+  spinner "$pid" "Installing Rust toolchain (stable)" 300 || spinner_exit=$?
   if [[ $spinner_exit -ne 0 ]]; then
     if [[ $spinner_exit -eq 124 ]]; then
       error "Rust installation timed out. See $log_file"
@@ -295,11 +314,22 @@ install_node() {
   eval "$(fnm env --use-on-cd)"
 
   step "Installing LTS version..."
+  local log_file="/tmp/fnm-install.log"
+  local pid
+  local spinner_exit=0
+
   (
-    fnm install --lts &>/tmp/fnm-install.log
-    fnm use lts-latest &>/dev/null
-  ) &
-  spinner $! "Downloading Node.js"
+    fnm install --lts
+    fnm use lts-latest
+  ) >"$log_file" 2>&1 &
+  pid=$!
+
+  spinner "$pid" "Downloading Node.js" || spinner_exit=$?
+  if [[ $spinner_exit -ne 0 ]]; then
+    warn "Node.js install failed. Last output:"
+    show_log_tail "$log_file"
+    error "Node.js installation failed. See $log_file"
+  fi
 
   success "Installed successfully — $(node --version)"
 }
@@ -310,10 +340,22 @@ init_submodules() {
   section "Git Submodules"
   step "Initializing..."
   cd "$DOTFILES_DIR"
+  local log_file="/tmp/submodule-init.log"
+  local pid
+  local spinner_exit=0
+
   (
-    git submodule update --init --recursive &>/tmp/submodule-init.log
-  ) &
-  spinner $! "Updating submodules"
+    git submodule update --init --recursive
+  ) >"$log_file" 2>&1 &
+  pid=$!
+
+  spinner "$pid" "Updating submodules" || spinner_exit=$?
+  if [[ $spinner_exit -ne 0 ]]; then
+    warn "Submodule init failed. Last output:"
+    show_log_tail "$log_file"
+    error "Failed to initialize submodules. See $log_file"
+  fi
+
   success "All submodules ready"
 }
 
@@ -406,20 +448,44 @@ install_zim() {
   if [[ ! -d "$ZIM_HOME" ]]; then
     step "Installing Zimfw..."
     command -v curl &>/dev/null || error "curl not found"
+    local install_log="/tmp/zim-install.log"
+    local install_pid
+    local install_exit=0
+
     (
-      curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | "$ZSH_PATH" &>/tmp/zim-install.log
-    ) &
-    spinner $! "Downloading Zim framework"
+      curl -fsSL https://raw.githubusercontent.com/zimfw/install/master/install.zsh | "$ZSH_PATH"
+    ) >"$install_log" 2>&1 &
+    install_pid=$!
+
+    spinner "$install_pid" "Downloading Zim framework" || install_exit=$?
+    if [[ $install_exit -ne 0 ]]; then
+      warn "Zimfw install failed. Last output:"
+      show_log_tail "$install_log"
+      error "Zimfw installation failed. See $install_log"
+    fi
+
     success "Zimfw installed"
   else
     success "Zimfw already installed"
   fi
 
   step "Syncing modules..."
+  local sync_log="/tmp/zim-sync.log"
+  local sync_pid
+  local sync_exit=0
+
   (
-    "$ZSH_PATH" -c 'source "$1/zimfw.zsh" init -q && source "$1/zimfw.zsh" install' _ "$ZIM_HOME" &>/tmp/zim-sync.log
-  ) &
-  spinner $! "Installing Zim plugins"
+    "$ZSH_PATH" -c 'source "$1/zimfw.zsh" init -q && source "$1/zimfw.zsh" install' _ "$ZIM_HOME"
+  ) >"$sync_log" 2>&1 &
+  sync_pid=$!
+
+  spinner "$sync_pid" "Installing Zim plugins" || sync_exit=$?
+  if [[ $sync_exit -ne 0 ]]; then
+    warn "Zim module sync failed. Last output:"
+    show_log_tail "$sync_log"
+    error "Failed to sync Zim modules. See $sync_log"
+  fi
+
   success "All modules synced"
 }
 
