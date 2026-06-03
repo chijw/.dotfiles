@@ -1,6 +1,36 @@
 local wezterm = require("wezterm")
+local act = wezterm.action
 
 local config = wezterm.config_builder()
+
+config.keys = {
+	{ key = "a", mods = "ALT|SHIFT", action = act.ActivateCopyMode },
+}
+
+local function repeat_move(direction, count)
+	local moves = {}
+	for _ = 1, count do
+		table.insert(moves, act.CopyMode(direction))
+	end
+	return act.Multiple(moves)
+end
+
+local copy_mode = wezterm.gui.default_key_tables().copy_mode
+local n = 5
+for _, m in ipairs({
+	{ key = "j", dir = "MoveDown" },
+	{ key = "k", dir = "MoveUp" },
+	{ key = "h", dir = "MoveLeft" },
+	{ key = "l", dir = "MoveRight" },
+}) do
+	table.insert(copy_mode, {
+		key = m.key,
+		mods = "SHIFT",
+		action = repeat_move(m.dir, n),
+	})
+end
+
+config.key_tables = { copy_mode = copy_mode }
 
 config.automatically_reload_config = true
 config.enable_tab_bar = false

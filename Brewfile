@@ -10,6 +10,3 @@ brew "ripgrep"
 brew "fd"
 brew "fzf"
 brew "zoxide"
-
-cask "codex"
-cask "claude-code"

@@ -44,6 +44,8 @@ zmodule zsh-users/zsh-completions --fpath src
 # after all modules that add completion definitions.
 zmodule completion
 
+zmodule utility
+
 #
 # Modules that must be initialized last
 #
