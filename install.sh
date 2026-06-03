@@ -144,6 +144,7 @@ show_log_tail() {
 # Global paths
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BREWFILE="$DOTFILES_DIR/Brewfile"
+NPMFILE="$DOTFILES_DIR/Npmfile"
 BREW_PATH=""
 ZSH_PATH=""
 
@@ -334,6 +335,76 @@ install_node() {
   success "Installed successfully — $(node --version)"
 }
 
+# Global npm CLI packages
+install_node_packages() {
+  section "Global npm Packages"
+  eval "$("$BREW_PATH" shellenv)"
+
+  # Ensure the fnm-managed Node is active so npm is on PATH (no sudo needed)
+  if command -v fnm &>/dev/null; then
+    eval "$(fnm env --use-on-cd)"
+    fnm use lts-latest &>/dev/null || true
+  fi
+
+  if ! command -v npm &>/dev/null; then
+    warn "npm not found; skipping npm packages"
+    return
+  fi
+
+  if [[ ! -f "$NPMFILE" ]]; then
+    warn "No Npmfile at $NPMFILE; skipping npm packages"
+    return
+  fi
+
+  # Read packages from Npmfile (one per line; ignore blanks and #-comments)
+  local packages=()
+  local line pkg
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"        # strip inline/full-line comments
+    read -r pkg _ <<<"$line"  # take first token, whitespace-trimmed
+    [[ -n "$pkg" ]] && packages+=("$pkg")
+  done < "$NPMFILE"
+
+  if [[ ${#packages[@]} -eq 0 ]]; then
+    success "No npm packages listed"
+    return
+  fi
+
+  local total=${#packages[@]}
+  local current=0
+  local failed=0
+
+  step "Installing CLI packages..."
+
+  for pkg in "${packages[@]}"; do
+    current=$((current + 1))
+    local log_file="/tmp/npm-install-$$-$current.log"
+    local pid
+    local spinner_exit=0
+
+    (
+      npm install -g "$pkg"
+    ) >"$log_file" 2>&1 &
+    pid=$!
+
+    spinner "$pid" "Installing $pkg ($current/$total)" || spinner_exit=$?
+    if [[ $spinner_exit -ne 0 ]]; then
+      warn "Failed to install $pkg. Last output:"
+      show_log_tail "$log_file"
+      failed=$((failed + 1))
+    else
+      substep "$pkg ready"
+    fi
+    rm -f "$log_file"
+  done
+
+  if [[ $failed -gt 0 ]]; then
+    warn "$failed of $total npm package(s) failed to install"
+  else
+    success "All npm packages ready"
+  fi
+}
+
 
 # Initialize git submodules
 init_submodules() {
@@ -520,6 +591,7 @@ main() {
   install_packages_via_brewfile
   install_rust
   install_node
+  install_node_packages
 
   init_submodules
 

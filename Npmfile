@@ -1,0 +1,5 @@
+# Global npm CLI packages installed by install.sh
+# One package per line; blank lines and #-comments are ignored.
+
+@openai/codex
+@anthropic-ai/claude-code
