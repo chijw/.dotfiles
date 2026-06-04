@@ -406,6 +406,89 @@ install_node_packages() {
 }
 
 
+# Mihomo (Clash.Meta kernel) — Linux only
+install_mihomo() {
+  # Only install on Linux. Skip silently on macOS and anything else.
+  if [[ "$(uname -s)" != "Linux" ]]; then
+    return
+  fi
+
+  section "Mihomo (Clash kernel)"
+
+  if command -v mihomo &>/dev/null; then
+    success "Already installed — $(mihomo -v 2>/dev/null | head -1)"
+    return
+  fi
+
+  command -v curl &>/dev/null || error "curl not found"
+
+  # Map machine architecture to mihomo's release asset naming.
+  local arch
+  case "$(uname -m)" in
+    x86_64 | amd64)  arch="amd64" ;;
+    aarch64 | arm64) arch="arm64" ;;
+    armv7l)          arch="armv7" ;;
+    i386 | i686)     arch="386" ;;
+    *)
+      warn "Unsupported architecture '$(uname -m)'; skipping mihomo"
+      return
+      ;;
+  esac
+
+  step "Resolving latest release..."
+  local api="https://api.github.com/repos/MetaCubeX/mihomo/releases/latest"
+  # Match only the plain linux-<arch>-vX.Y.Z.gz binary. Requiring a full
+  # three-part version right after the arch skips the microarch ('-v1/-v2/-v3'),
+  # '-go12x' and '-compatible' variants, which share the 'mihomo-linux-<arch>'
+  # prefix but never have 'vX.Y.Z.gz' immediately after it.
+  local url
+  url="$(curl -fsSL "$api" \
+    | grep -oE "https://[^\"]*/mihomo-linux-${arch}-v[0-9]+\.[0-9]+\.[0-9]+\.gz" \
+    | head -1)"
+
+  if [[ -z "$url" ]]; then
+    warn "Could not resolve mihomo download URL for linux-${arch}; skipping"
+    return
+  fi
+
+  local install_dir="$HOME/.local/bin"
+  mkdir -p "$install_dir"
+
+  step "Downloading $(basename "$url")..."
+  local tmp_gz="/tmp/mihomo-$$.gz"
+  local log_file="/tmp/mihomo-install.log"
+  local pid
+  local dl_exit=0
+
+  (
+    curl -fsSL -o "$tmp_gz" "$url"
+  ) >"$log_file" 2>&1 &
+  pid=$!
+
+  spinner "$pid" "Downloading mihomo" || dl_exit=$?
+  if [[ $dl_exit -ne 0 ]]; then
+    warn "mihomo download failed. Last output:"
+    show_log_tail "$log_file"
+    rm -f "$tmp_gz"
+    warn "Skipping mihomo install"
+    return
+  fi
+
+  if ! gunzip -c "$tmp_gz" >"$install_dir/mihomo" 2>>"$log_file"; then
+    warn "Failed to extract mihomo binary; skipping"
+    rm -f "$tmp_gz" "$install_dir/mihomo"
+    return
+  fi
+  rm -f "$tmp_gz"
+  chmod +x "$install_dir/mihomo"
+
+  if "$install_dir/mihomo" -v &>/dev/null; then
+    success "Installed successfully — $("$install_dir/mihomo" -v 2>/dev/null | head -1)"
+  else
+    success "Installed to $install_dir/mihomo"
+  fi
+}
+
 # Initialize git submodules
 init_submodules() {
   section "Git Submodules"
@@ -601,6 +684,7 @@ main() {
   install_rust
   install_node
   install_node_packages
+  install_mihomo
 
   init_submodules
 
