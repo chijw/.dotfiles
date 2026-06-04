@@ -437,7 +437,7 @@ stow_dotfiles() {
   mkdir -p "$HOME/.config"
   cd "$DOTFILES_DIR"
 
-  local folders=(tmux zim nvim yazi pip wezterm)
+  local folders=(tmux zim nvim yazi pip wezterm zsh)
   local total=${#folders[@]}
   local current=0
 
@@ -500,6 +500,15 @@ setup_local_zshrc() {
   if ! grep -qF 'fnm env' "$zshrc"; then
     echo 'eval "$(fnm env --use-on-cd)"' >> "$zshrc"
     step "Added fnm initialization"
+    changes=$((changes + 1))
+  fi
+
+  # Source personal config (stowed from zsh/.zshrc.local) if not already wired.
+  # Appended after the Zim bootstrap block so zle/bindkey customizations apply
+  # after Zim init. The guard keeps this safe if ~/.zshrc.local is missing.
+  if ! grep -qF '.zshrc.local' "$zshrc"; then
+    echo '[[ -f "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"' >> "$zshrc"
+    step "Added ~/.zshrc.local source"
     changes=$((changes + 1))
   fi
 
