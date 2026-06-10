@@ -520,7 +520,7 @@ stow_dotfiles() {
   mkdir -p "$HOME/.config"
   cd "$DOTFILES_DIR"
 
-  local folders=(tmux zim nvim yazi pip wezterm zsh)
+  local folders=(tmux zim nvim yazi pip wezterm zsh kitty)
   local total=${#folders[@]}
   local current=0
 

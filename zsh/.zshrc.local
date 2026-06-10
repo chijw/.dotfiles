@@ -24,6 +24,11 @@ alias pp="pngpaste"
 alias vim="nvim"
 alias lg="lazygit"
 
+# kitty: copy terminfo to remote hosts automatically (fixes
+# "missing or unsuitable terminal: xterm-kitty" and the garbled
+# double-echo it causes). Guarded so plain ssh still works elsewhere.
+[[ "$TERM" == "xterm-kitty" ]] && alias ssh="kitten ssh"
+
 # -----------------
 # vi-mode cursor shape
 # -----------------
