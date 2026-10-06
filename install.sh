@@ -295,6 +295,7 @@ setup_zshrc() {
   touch "$HOME/.zshrc"
   local brew_env="eval \"\$($BREW_PATH shellenv)\""
   add_to_zshrc "$brew_env" "$brew_env"
+  add_to_zshrc '$HOME/.local/bin' 'export PATH="$HOME/.local/bin:$PATH"'
   add_to_zshrc '.cargo/env' '[[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"'
   add_to_zshrc 'fnm env' 'eval "$(fnm env --use-on-cd)"'
   add_to_zshrc '.zshrc.local' '[[ -f "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"'
@@ -329,6 +330,7 @@ main() {
   [[ "$EUID" -ne 0 ]] || error "Use 'bash install.sh root [username]' when running as root."
 
   echo -e "\n${BOLD}${CYAN}Dotfiles Setup${NC}"
+  export PATH="$HOME/.local/bin:$PATH"
 
   init_paths
   install_homebrew
