@@ -1,86 +1,54 @@
-# ~/.zshrc.local — personal config tracked in dotfiles.
-# Sourced from ~/.zshrc by install.sh, after the Zim bootstrap block,
-# so anything depending on zle / bindkey runs after Zim is initialized.
+# Sourced from ~/.zshrc after the Zim bootstrap block (see install.sh),
+# so zle / bindkey customizations apply after Zim is initialized.
 
-# -----------------
 # Environment
-# -----------------
 export http_proxy="http://127.0.0.1:7890"
 export https_proxy="http://127.0.0.1:7890"
 export all_proxy="socks5://127.0.0.1:7890"
-
 export HOMEBREW_API_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api"
-
 export FZF_DEFAULT_COMMAND='fd --type f'
-
 export PATH="$HOME/scripts:$PATH"
-
 export EDITOR="nvim"
 
-# -----------------
 # Aliases
-# -----------------
 alias pp="pngpaste"
 alias vim="nvim"
 alias lg="lazygit"
-
-# kitty: copy terminfo to remote hosts automatically (fixes
-# "missing or unsuitable terminal: xterm-kitty" and the garbled
-# double-echo it causes). Guarded so plain ssh still works elsewhere.
+# kitten ssh copies kitty's terminfo to the remote host, fixing
+# "missing or unsuitable terminal: xterm-kitty".
 [[ "$TERM" == "xterm-kitty" ]] && alias ssh="kitten ssh"
 
-# -----------------
-# vi-mode cursor shape
-# -----------------
-function zle-keymap-select {
-	if [[ ${KEYMAP} == vicmd ]] || [[ $1 = 'block' ]]; then
-		echo -ne '\e[1 q'
-	elif [[ ${KEYMAP} == main ]] || [[ ${KEYMAP} == viins ]] || [[ ${KEYMAP} = '' ]] || [[ $1 = 'beam' ]]; then
-		echo -ne '\e[5 q'
-  fi
+# vi-mode cursor shape: block in normal mode, beam otherwise
+_beam_cursor() { echo -ne '\e[5 q' }
+zle-keymap-select() {
+  case $KEYMAP in
+    vicmd) echo -ne '\e[1 q' ;;
+    main|viins|'') _beam_cursor ;;
+  esac
 }
 zle -N zle-keymap-select
-
-# Use beam shape cursor on startup.
-echo -ne '\e[5 q'
-
-# Use beam shape cursor for each new prompt.
-preexec() {
-	echo -ne '\e[5 q'
-}
-
-_fix_cursor() {
-	echo -ne '\e[5 q'
-}
-precmd_functions+=(_fix_cursor)
-
+precmd_functions+=(_beam_cursor)
+preexec_functions+=(_beam_cursor)
 KEYTIMEOUT=1
 
-# -----------------
-# vi-mode paste from system clipboard
-# -----------------
-function vi-paste-from-system-clipboard() {
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        LBUFFER+="$(pbpaste)"
-    else
-        LBUFFER+="$(xclip -o -selection clipboard 2>/dev/null)"
-    fi
+# vi-mode paste from the system clipboard
+vi-paste-from-system-clipboard() {
+  if [[ "$OSTYPE" == darwin* ]]; then
+    LBUFFER+="$(pbpaste)"
+  else
+    LBUFFER+="$(xclip -o -selection clipboard 2>/dev/null)"
+  fi
 }
 zle -N vi-paste-from-system-clipboard
 bindkey -M vicmd 'p' vi-paste-from-system-clipboard
 
-# -----------------
 # yazi: cd to the directory yazi exits in
-# -----------------
-function y() {
-    local tmp="$(mktemp -t "yazi-cwd.XXXXXX")" cwd
-    command yazi "$@" --cwd-file="$tmp"
-    IFS= read -r -d '' cwd < "$tmp"
-    [ -n "$cwd" ] && [ "$cwd" != "$PWD" ] && builtin cd -- "$cwd"
-    rm -f -- "$tmp"
+y() {
+  local tmp="$(mktemp -t "yazi-cwd.XXXXXX")" cwd
+  command yazi "$@" --cwd-file="$tmp"
+  IFS= read -r -d '' cwd < "$tmp"
+  [ -n "$cwd" ] && [ "$cwd" != "$PWD" ] && builtin cd -- "$cwd"
+  rm -f -- "$tmp"
 }
 
-# -----------------
-# fzf key bindings / completion (if present)
-# -----------------
 [[ -f ~/fzf.zsh ]] && source ~/fzf.zsh

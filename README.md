@@ -10,3 +10,11 @@ cd ~/.dotfiles
 bash install.sh
 exec zsh -l
 ```
+
+From root (Linux with apt/dnf/yum):
+
+```bash
+bash install.sh root          # default user: chijw
+# bash install.sh root alice  # custom username
+su - chijw
+```
