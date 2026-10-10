@@ -1,6 +1,7 @@
 brew "stow"
 
 brew "neovim"
+brew "tree-sitter-cli"
 brew "lazygit"
 brew "yazi"
 brew "fastfetch"
