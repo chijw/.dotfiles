@@ -71,7 +71,7 @@ install_system_dependencies() {
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       build-essential procps curl file git ca-certificates zsh \
-      unzip tar gzip passwd util-linux
+      unzip tar gzip passwd util-linux kitty-terminfo
   elif command -v dnf &>/dev/null || command -v yum &>/dev/null; then
     "$(command -v dnf || command -v yum)" install -y gcc gcc-c++ make procps-ng \
       curl file git ca-certificates zsh unzip tar gzip shadow-utils util-linux
