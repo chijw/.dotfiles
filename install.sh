@@ -164,8 +164,10 @@ init_paths() {
 install_homebrew() {
   section "Homebrew"
   if [[ -z "$BREW_PATH" ]]; then
-    run "Installing Homebrew" /bin/bash -o pipefail -c \
-      'curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | NONINTERACTIVE=1 /bin/bash'
+    # Keep downloads in the foreground so failures are visible and Ctrl-C stops them.
+    step "Installing Homebrew..."
+    curl -fsSL --connect-timeout 15 --max-time 120 \
+      https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | NONINTERACTIVE=1 /bin/bash
     init_paths
     [[ -n "$BREW_PATH" ]] || error "Homebrew installed, but brew was not found"
   fi

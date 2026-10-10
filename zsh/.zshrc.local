@@ -2,9 +2,9 @@
 # so zle / bindkey customizations apply after Zim is initialized.
 
 # Environment
-export http_proxy="http://127.0.0.1:7890"
-export https_proxy="http://127.0.0.1:7890"
-export all_proxy="socks5://127.0.0.1:7890"
+export http_proxy="${http_proxy-http://127.0.0.1:7890}"
+export https_proxy="${https_proxy-http://127.0.0.1:7890}"
+export all_proxy="${all_proxy-socks5://127.0.0.1:7890}"
 export HOMEBREW_API_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api"
 export FZF_DEFAULT_COMMAND='fd --type f'
 export PATH="$HOME/scripts:$PATH"
