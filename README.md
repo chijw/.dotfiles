@@ -16,5 +16,6 @@ From root (Linux with apt/dnf/yum):
 ```bash
 bash install.sh root          # default user: chijw
 # bash install.sh root alice  # custom username
+passwd chijw                 # set a password for sudo
 su - chijw
 ```

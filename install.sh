@@ -59,9 +59,9 @@ Usage:
   bash install.sh root [username]  Bootstrap Linux from root (default: chijw)
   bash install.sh --help           Show this help
 
-Root mode (apt-get, dnf or yum) creates or reuses a regular user, hands it
-/home/linuxbrew/.linuxbrew and a copy of this checkout, then runs the installer
-as that user. No password or sudo grant is needed.
+Root mode (apt-get, dnf or yum) creates or reuses a regular user, grants sudo,
+hands it /home/linuxbrew/.linuxbrew and a copy of this checkout, then runs the
+installer as that user. Set a user password with passwd to use sudo.
 EOF
 }
 
@@ -71,13 +71,30 @@ install_system_dependencies() {
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       build-essential procps curl file git ca-certificates zsh \
-      unzip tar gzip passwd util-linux kitty-terminfo
+      unzip tar gzip passwd util-linux kitty-terminfo sudo
   elif command -v dnf &>/dev/null || command -v yum &>/dev/null; then
     "$(command -v dnf || command -v yum)" install -y gcc gcc-c++ make procps-ng \
-      curl file git ca-certificates zsh unzip tar gzip shadow-utils util-linux
+      curl file git ca-certificates zsh unzip tar gzip shadow-utils util-linux sudo
   else
     error "Root mode requires apt-get, dnf or yum (Alpine/musl is not supported)."
   fi
+}
+
+setup_sudo() {
+  local username="$1" sudoers_tmp
+  section "Sudo: $username"
+  sudoers_tmp="$(mktemp)"
+  printf '%s ALL=(ALL:ALL) ALL\n' "$username" > "$sudoers_tmp"
+  visudo -cf "$sudoers_tmp"
+  install -d -m 0750 /etc/sudoers.d
+  install -o root -g root -m 0440 "$sudoers_tmp" "/etc/sudoers.d/90-dotfiles-$username"
+  rm -f "$sudoers_tmp"
+  visudo -c
+  sudo -l -U "$username"
+  success "Sudo access configured (password required)"
+  case "$(passwd -S "$username" | awk '{print $2}')" in
+    L|LK|NP) warn "Set a password as root before using sudo: passwd $username" ;;
+  esac
 }
 
 bootstrap_root() {
@@ -103,6 +120,7 @@ bootstrap_root() {
   group="$(id -gn "$username")"
   mkdir -p "$home"
   chown "$username:$group" "$home"
+  setup_sudo "$username"
 
   section "Linuxbrew Directory"
   if [[ -d "$brew_prefix" ]]; then
