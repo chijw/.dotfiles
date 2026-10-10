@@ -188,7 +188,7 @@ install_packages() {
 install_rust() {
   section "Rust & Cargo"
   [[ ! -f "$HOME/.cargo/env" ]] || source "$HOME/.cargo/env"
-  if ! command -v cargo &>/dev/null; then
+  if ! command -v cargo &>/dev/null || ! rustc --version &>/dev/null; then
     run "Installing Rust toolchain (stable)" /bin/bash -o pipefail -c \
       "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path"
     source "$HOME/.cargo/env"

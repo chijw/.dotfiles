@@ -205,13 +205,28 @@ local function setup(st, opts)
 	end, opts.order)
 end
 
+-- New Yazi fetchers report completion per file; keep support for older releases.
+local function fetch_result(job, retry)
+	local done = require("noop"):fetch(job)
+	if type(done) == "boolean" then
+		return not retry
+	elseif not retry then
+		return done
+	end
+	return ya.co(function()
+		for _, file in ipairs(job.files) do
+			coroutine.yield(file, { retry = true })
+		end
+	end)
+end
+
 ---@type UnstableFetcher
 local function fetch(_, job)
 	local cwd = job.files[1].url.base or job.files[1].url.parent
 	local repo = root(cwd)
 	if not repo then
 		remove(tostring(cwd))
-		return true
+		return fetch_result(job, false)
 	end
 
 	local paths = {}
@@ -226,7 +241,7 @@ local function fetch(_, job)
 		:arg(paths)
 		:output()
 	if not output then
-		return true, Err("Cannot spawn `git` command, error: %s", err)
+		return fetch_result(job, false), Err("Cannot spawn `git` command, error: %s", err)
 	end
 
 	local changed, excluded = {}, {}
@@ -253,7 +268,7 @@ local function fetch(_, job)
 
 	add(tostring(cwd), repo, changed)
 
-	return false
+	return fetch_result(job, true)
 end
 
 return { setup = setup, fetch = fetch }
