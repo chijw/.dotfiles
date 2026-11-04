@@ -280,7 +280,7 @@ stow_dotfiles() {
   mkdir -p "$HOME/.config"
 
   local pkg
-  for pkg in tmux zim nvim yazi pip wezterm zsh kitty; do
+  for pkg in tmux zim nvim yazi pip wezterm zsh kitty bat git lazygit btop; do
     stow --restow --dir="$DOTFILES_DIR" --target="$HOME" \
       --ignore='(^|/)\.git$' --ignore='(^|/)\.DS_Store$' --ignore='(^|/)\.nvimlog$' \
       "$pkg" || error "Failed to stow '$pkg'"

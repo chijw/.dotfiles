@@ -1,0 +1,7 @@
+# Read by fzf via FZF_DEFAULT_OPTS_FILE (see .zshrc.local).
+# Vim-style modes. Typing filters as usual (insert mode); Esc enters normal
+# mode: j/k move, J/K move 5, g/G first/last, i back to typing, q/Esc quit.
+--bind='start:unbind(j,k,J,K,g,G,i,q)'
+--bind='esc:transform:[[ $FZF_PROMPT == "N> " ]] && echo abort || echo "rebind(j,k,J,K,g,G,i,q)+change-prompt(N> )"'
+--bind='i:unbind(j,k,J,K,g,G,i,q)+change-prompt(> )'
+--bind='j:down,k:up,J:down+down+down+down+down,K:up+up+up+up+up,g:first,G:last,q:abort'

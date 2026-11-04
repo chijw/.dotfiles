@@ -1,0 +1,3 @@
+# Same palette as kitty/nvim/tmux.
+--theme="Catppuccin Mocha"
+--style="numbers,changes,header"

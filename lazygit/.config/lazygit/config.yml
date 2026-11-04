@@ -1,0 +1,6 @@
+# Found via LG_CONFIG_FILE (macOS lazygit otherwise reads ~/Library/Application Support).
+git:
+  # `|` cycles: inline delta (fits lazygit's panel), then side-by-side.
+  pagers:
+    - pager: delta --paging=never --features=
+    - pager: delta --paging=never

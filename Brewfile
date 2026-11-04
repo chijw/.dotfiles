@@ -11,3 +11,7 @@ brew "ripgrep"
 brew "fd"
 brew "fzf"
 brew "zoxide"
+
+brew "bat"
+brew "git-delta"
+brew "btop"
