@@ -70,5 +70,24 @@ rgf() {
     --bind 'enter:become(nvim {1} +{2})'
 }
 
+# clip: copy stdin to the clipboard. Locally uses pbcopy; over SSH (or without
+# pbcopy) sends an OSC 52 escape that kitty turns into a local copy, through
+# tmux too, so remote servers need no xclip.
+clip() {
+  local data; data=$(cat)
+  if [[ -z $SSH_TTY ]] && (( $+commands[pbcopy] )); then
+    print -rn -- "$data" | pbcopy
+  else
+    printf '\e]52;c;%s\a' "$(print -rn -- "$data" | base64 | tr -d '\n')" > /dev/tty
+  fi
+}
+
+# fzfp [fzf args]: pick with fzf and copy the choice (Tab-marked ones, one per line).
+fzfp() {
+  local sel; sel=$(fzf "$@") || return
+  print -rn -- "$sel" | clip
+  print -r -- "$sel"
+}
+
 # zoxide: `z foo` jumps to a frequent directory, `zi` picks one with fzf.
 (( $+commands[zoxide] )) && eval "$(zoxide init zsh)"
